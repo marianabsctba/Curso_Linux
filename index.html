@@ -591,6 +591,9 @@ a{color:var(--cyan)}
 .cert hr{border:0;border-top:1px solid #cbd5e1;margin:20px 0}
 .cert .cert-btn{padding:12px 24px;border-radius:12px;border:none;background:#0f172a;
   color:#fff;cursor:pointer;font-size:14px;font-family:var(--ui);font-weight:600}
+.cert .cert-actions{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;margin-top:22px}
+.cert.exporting .cert-actions{display:none!important}
+.cert.exporting{box-shadow:none!important}
 .cert .cert-name-input{width:min(520px,100%);padding:13px 16px;border:1px solid #94a3b8;border-radius:12px;background:#fff;color:#0f172a;font-family:var(--ui);font-size:15px;margin:12px auto;display:block;text-align:center}
 .cert .cert-name-input:focus{outline:3px solid rgba(30,58,138,.18);border-color:#1e3a8a}
 
@@ -707,7 +710,7 @@ a{color:var(--cyan)}
           <li>A nota mínima é <strong>80%</strong> nas questões totais (soma de todos os módulos).</li>
           <li>O progresso é salvo automaticamente no seu navegador (localStorage).</li>
           <li>Se trocar de navegador ou apagar dados do navegador, o progresso é perdido.</li>
-          <li>O certificado pode ser impresso como PDF pelo navegador (Ctrl+P).</li>
+          <li>O certificado pode ser baixado em PNG diretamente pelo navegador.</li>
         </ul>
       </div>
 
@@ -838,6 +841,7 @@ a{color:var(--cyan)}
 
 </div><!-- /layout -->
 
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script>
 'use strict';
 
@@ -1686,22 +1690,74 @@ function renderCertificateFinal(){
   const date = new Date().toLocaleDateString('pt-BR');
   cert.className = 'cert';
   cert.innerHTML = `
-    <div class="seal">BS</div>
+    <div class="seal">Mariana BS</div>
     <h2>Certificado de Conclusão</h2>
     <p style="font-size:15px;margin:8px 0">Certificamos que</p>
     <h3>${esc(name)}</h3>
     <p>concluiu com aprovação o curso</p>
-    <p><strong>Linux na Prática com CLI Simulada</strong></p>
+    <p><strong>Linux na Prática com Linux em WebAssembly</strong></p>
     <p style="font-size:14px;color:#334155">Curso prático com avaliação, terminal Linux em WebAssembly, laboratórios por módulo,<br>teoria detalhada e questões comentadas.</p>
     <hr>
     <p><b>Carga horária:</b> 84 horas &nbsp;·&nbsp; <b>Aproveitamento:</b> ${sc.pct}% &nbsp;·&nbsp; <b>Data:</b> ${date}</p>
     <p style="font-size:13px;color:#475569"><b>Módulos:</b> FHS, Boot, CLI, Texto, Permissões, Processos, Rede, Usuários, Bash, Storage, systemd, Segurança, Kernel, DevOps e Containers</p>
     <hr>
     <p style="font-size:13px">Mariana BS · Cybersecurity Engineer</p>
-    <small>Certificado gerado pelo curso interativo em HTML · ambiente Linux em WebAssembly · validação local no navegador</small>
-    <br><br>
-    <button class="cert-btn" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
-    <button class="cert-btn" style="margin-left:8px;background:#334155" onclick="state.name='';save();showCertificate()">Alterar nome</button>`;
+    <small></small>
+    <div class="cert-actions">
+      <button class="cert-btn" onclick="downloadCertPNG()">Baixar certificado em PNG</button>
+      <button class="cert-btn" style="background:#334155" onclick="state.name='';save();showCertificate()">Alterar nome</button>
+    </div>`;
+}
+
+async function downloadCertPNG(){
+  const cert = document.getElementById('certificate');
+  if(!cert){
+    alert('Certificado não encontrado.');
+    return;
+  }
+  if(!state.name){
+    alert('Informe o nome antes de baixar o certificado.');
+    showCertificate();
+    return;
+  }
+
+  const previousScroll = {x: window.scrollX, y: window.scrollY};
+  cert.classList.add('exporting');
+
+  try{
+    if(typeof html2canvas !== 'function'){
+      throw new Error('A biblioteca de exportação PNG não carregou. Verifique a conexão com a internet e tente novamente.');
+    }
+
+    const canvas = await html2canvas(cert, {
+      scale: Math.min(3, window.devicePixelRatio || 2),
+      backgroundColor: '#f8fafc',
+      useCORS: true,
+      allowTaint: false,
+      logging: false,
+      scrollX: 0,
+      scrollY: -window.scrollY
+    });
+
+    const safeName = (state.name || 'aluna-linux')
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase() || 'aluna-linux';
+
+    const link = document.createElement('a');
+    link.download = `certificado-linux-mariana-bs-${safeName}.png`;
+    link.href = canvas.toDataURL('image/png');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch(err){
+    console.error('Erro ao gerar PNG:', err);
+    alert('Não consegui gerar o PNG do certificado: ' + err.message);
+  } finally {
+    cert.classList.remove('exporting');
+    window.scrollTo(previousScroll.x, previousScroll.y);
+  }
 }
 
 // ═══════════════════════════════════════════════════════
