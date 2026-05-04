@@ -982,39 +982,51 @@ function renderQuiz(m){
   title.textContent = 'Questões do módulo';
   box.appendChild(title);
 
-  // Compute shuffled option order once per module render (stable for this render)
+  const note = document.createElement('p');
+  note.style.cssText = 'font-size:13px;color:#6b5a3e;margin:-8px 0 18px;font-style:italic';
+  note.textContent = 'Errou? Sem drama. A questão pode ser refeita quantas vezes precisar antes da validação do módulo.';
+  box.appendChild(note);
+
   const moduleIdx = modules.indexOf(m);
 
   m.quiz.forEach((q, qi) => {
     const correctIdx = q[2];
-    const options = q[1]; // original options array
+    const options = q[1];
     const comment = q[3] || '';
-
-    // Shuffle option indices for display — XOR-based, stable per module
     const displayOrder = xorShuffle(options.map((_, i) => i), moduleIdx * 17 + qi);
 
-    const savedAnswer = (state.quiz[m.id] || {})[qi]; // original index or undefined
+    const savedAnswer = (state.quiz[m.id] || {})[qi];
     const isAnswered = savedAnswer !== undefined;
 
-    // Build question container
     const qDiv = document.createElement('div');
     qDiv.className = 'q';
+    qDiv.dataset.moduleId = m.id;
+    qDiv.dataset.questionIndex = String(qi);
+    qDiv.dataset.correctIndex = String(correctIdx);
 
-    // Question text
     const qText = document.createElement('div');
     qText.className = 'q-text';
     qText.innerHTML = '<span class="q-num">Q' + (qi+1) + '</span>' + esc(q[0]);
     qDiv.appendChild(qText);
 
-    // Options in shuffled order
+    function applyFeedback(chosen){
+      const allLabels = qDiv.querySelectorAll('label.opt');
+      allLabels.forEach(lb => {
+        const r = lb.querySelector('input[type=radio]');
+        const idx = parseInt(r.value, 10);
+        lb.classList.remove('correct', 'wrong');
+        if(idx === correctIdx) lb.classList.add('correct');
+        else if(idx === chosen) lb.classList.add('wrong');
+      });
+      const cDiv = qDiv.querySelector('.q-comment');
+      if(cDiv) cDiv.classList.add('show');
+      const retry = qDiv.querySelector('.retry-question-btn');
+      if(retry) retry.style.display = 'inline-flex';
+    }
+
     displayOrder.forEach(origIdx => {
       const label = document.createElement('label');
-      let cls = 'opt';
-      if(isAnswered){
-        if(origIdx === correctIdx) cls += ' correct';
-        else if(origIdx === savedAnswer) cls += ' wrong';
-      }
-      label.className = cls;
+      label.className = 'opt';
 
       const radio = document.createElement('input');
       radio.type = 'radio';
@@ -1026,35 +1038,21 @@ function renderQuiz(m){
         const chosen = parseInt(this.value, 10);
         state.quiz[m.id] = state.quiz[m.id] || {};
         state.quiz[m.id][qi] = chosen;
+
+        // Se o aluno mudou uma resposta já validada, o módulo volta a exigir validação.
+        delete state.done[m.id];
         save();
 
-        // Apply feedback WITHOUT full re-render
-        const allLabels = qDiv.querySelectorAll('label.opt');
-        allLabels.forEach(lb => {
-          const r = lb.querySelector('input[type=radio]');
-          const idx = parseInt(r.value, 10);
-          lb.classList.remove('correct', 'wrong');
-          if(idx === correctIdx) lb.classList.add('correct');
-          else if(idx === chosen) lb.classList.add('wrong');
-          r.disabled = true;
-        });
-
-        // Show comment
-        if(comment){
-          const cDiv = qDiv.querySelector('.q-comment');
-          if(cDiv) cDiv.classList.add('show');
-        }
+        applyFeedback(chosen);
+        renderModuleNav();
+        updateProgress();
       });
 
       label.appendChild(radio);
       label.appendChild(document.createTextNode(' ' + options[origIdx]));
       qDiv.appendChild(label);
-
-      // Disable if already answered
-      if(isAnswered) radio.disabled = true;
     });
 
-    // Comment box (hidden until answered)
     if(comment){
       const cDiv = document.createElement('div');
       cDiv.className = 'q-comment' + (isAnswered ? ' show' : '');
@@ -1062,8 +1060,52 @@ function renderQuiz(m){
       qDiv.appendChild(cDiv);
     }
 
+    const retryWrap = document.createElement('div');
+    retryWrap.style.cssText = 'margin-top:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+
+    const retryBtn = document.createElement('button');
+    retryBtn.type = 'button';
+    retryBtn.className = 'btn retry-question-btn';
+    retryBtn.style.cssText = 'padding:8px 12px;font-size:12px;background:#f5f1ea;color:#1a1510;border-color:#c8b89a;display:' + (isAnswered ? 'inline-flex' : 'none');
+    retryBtn.textContent = '↻ tentar novamente';
+    retryBtn.addEventListener('click', function(){
+      retryQuestion(m.id, qi, qDiv);
+    });
+
+    const retryHint = document.createElement('span');
+    retryHint.style.cssText = 'font-size:12px;color:#6b5a3e;font-style:italic';
+    retryHint.textContent = 'A última resposta válida é a que conta na validação.';
+
+    retryWrap.appendChild(retryBtn);
+    retryWrap.appendChild(retryHint);
+    qDiv.appendChild(retryWrap);
+
     box.appendChild(qDiv);
+
+    if(isAnswered) applyFeedback(savedAnswer);
   });
+}
+
+function retryQuestion(moduleId, questionIndex, qDiv){
+  const moduleState = state.quiz[moduleId] || {};
+  delete moduleState[questionIndex];
+  state.quiz[moduleId] = moduleState;
+
+  // Ao refazer uma questão, o módulo precisa ser validado novamente.
+  delete state.done[moduleId];
+  save();
+
+  qDiv.querySelectorAll('input[type=radio]').forEach(r => { r.checked = false; });
+  qDiv.querySelectorAll('label.opt').forEach(opt => opt.classList.remove('correct', 'wrong'));
+
+  const cDiv = qDiv.querySelector('.q-comment');
+  if(cDiv) cDiv.classList.remove('show');
+
+  const retry = qDiv.querySelector('.retry-question-btn');
+  if(retry) retry.style.display = 'none';
+
+  renderModuleNav();
+  updateProgress();
 }
 
 // ═══════════════════════════════════════════════════════
